@@ -41,7 +41,6 @@ public static class Extensions {
         (_sprintCounter ??= hunger.GetType().GetField("sprintCounter", BindingFlags.Instance | BindingFlags.NonPublic))?.SetValue(hunger, 0);
     }
 
-    // https://github.com/anegostudios/vsapi/blob/master/Common/Collectible/Block/BlockSchematic.cs
     public static void AddAreaWithoutEntities(this BlockSchematic bs, IWorldAccessor world, IBlockAccessor blockAccess, BlockPos start, BlockPos end) {
         BlockPos startPos = new(Math.Min(start.X, end.X), Math.Min(start.Y, end.Y), Math.Min(start.Z, end.Z), start.dimension);
         BlockPos finalPos = new(Math.Max(start.X, end.X), Math.Max(start.Y, end.Y), Math.Max(start.Z, end.Z), start.dimension);
@@ -94,8 +93,7 @@ public static class Extensions {
         }
     }
 
-    // https://github.com/anegostudios/vsapi/blob/master/Common/Collectible/Block/BlockSchematic.cs
-    public static bool PackIncludingAir(this BlockSchematic bs, IWorldAccessor world, BlockPos startPos) {
+    public static bool PackIncludingAir(this BlockSchematic bs, IWorldAccessor world, BlockPos startPos, int solidBlockCount) {
         bs.Indices.Clear();
         bs.BlockIds.Clear();
         bs.BlockEntities.Clear();
@@ -112,6 +110,8 @@ public static class Extensions {
             minX = Math.Min(minX, val.Key.X);
             minY = Math.Min(minY, val.Key.Y);
             minZ = Math.Min(minZ, val.Key.Z);
+
+            int blockId = val.Value;
 
             // Store relative position and the block id
             int dx = val.Key.X - startPos.X;
@@ -158,7 +158,7 @@ public static class Extensions {
             }
         }
 
-        // also export fluid locks that do not have any other blocks in the same position
+        // also export fluid blocks that do not have any other blocks in the same position
         foreach ((BlockPos? pos, int blockId) in bs.FluidsLayerUnpacked) {
             if (bs.BlocksUnpacked.ContainsKey(pos)) continue;
 
@@ -240,6 +240,9 @@ public static class Extensions {
         bs.DecorsUnpacked.Clear();
         bs.BlockEntitiesUnpacked.Clear();
         bs.EntitiesUnpacked.Clear();
+
+        world.Logger.Debug("Packing schematic with {0} solid blocks", solidBlockCount);
+
         return true;
     }
 }

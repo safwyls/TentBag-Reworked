@@ -1,12 +1,17 @@
-﻿using System.Diagnostics.CodeAnalysis;
+using System.Diagnostics.CodeAnalysis;
 
 namespace tentbag.configuration;
 
 [SuppressMessage("ReSharper", "AutoPropertyCanBeMadeGetOnly.Global")]
 public class Config {
-    public int Radius { get; set; } = 3;
-    public int Height { get; set; } = 7;
-    public float BuildEffort { get; set; } = 100F;
+    // Maximum allowed radius and height for a tent
+    public int MaxRadius { get; set; } = 3;
+    public int MaxHeight { get; set; } = 7;
+
+    // Build Effort is calculated per solid block, so a 3x3x7 tent would have a maximum possible BuildEffort of 3*3*3*7 = 189
+    public float BuildEffort { get; set; } = 3F;
+
+    // Misc Preferences
     public bool RequireFloor { get; set; } = false;
     public bool ReplacePlantsAndRocks { get; set; } = true;
     public bool PutTentInInventoryOnUse { get; set; } = true;

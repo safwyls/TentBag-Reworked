@@ -4,6 +4,7 @@ using Vintagestory.API.Common;
 using Vintagestory.API.MathTools;
 using Vintagestory.API.Server;
 using Vintagestory.API.Util;
+using Vintagestory.GameContent;
 using Vintagestory.Server;
 
 namespace tentbag.behaviors;
@@ -40,29 +41,30 @@ public class PackableBehavior : CollectibleBehavior {
         }
 
         string contents = slot.Itemstack.Attributes.GetString("tent-contents") ?? slot.Itemstack.Attributes.GetString("packed-contents");
+        int solidBlockCount = slot.Itemstack.Attributes.GetInt("solid-block-count");
         if (contents == null) {
-            PackContents(entity, blockSel, slot);
+            PackContents(entity, blockSel, slot, ref solidBlockCount);
         } else {
-            UnpackContents(entity, blockSel, slot, contents);
-        }
+            UnpackContents(entity, blockSel, slot, contents, ref solidBlockCount);
+        } 
     }
 
-    private void PackContents(EntityPlayer entity, BlockSelection blockSel, ItemSlot slot) {
+    private void PackContents(EntityPlayer entity, BlockSelection blockSel, ItemSlot slot, ref int solidBlockCount) {
         IBlockAccessor blockAccessor = entity.World.BlockAccessor;
 
         int y = IsPlantOrRock(blockAccessor.GetBlock(blockSel.Position)) ? 1 : 0;
 
-        BlockPos start = blockSel.Position.AddCopy(-Config.Radius, 1 - y, -Config.Radius);
-        BlockPos end = blockSel.Position.AddCopy(Config.Radius, Math.Max(Config.Height, 3), Config.Radius);
+        BlockPos start = blockSel.Position.AddCopy(-Config.MaxRadius, 1 - y, -Config.MaxRadius);
+        BlockPos end = blockSel.Position.AddCopy(Config.MaxRadius, Math.Max(Config.MaxHeight, 3), Config.MaxRadius);
 
-        if (!CanPack(entity, blockAccessor, start, end)) {
+        if (!CanPack(entity, blockAccessor, start, end, ref solidBlockCount)) {
             return;
         }
 
         // create schematic of area
         BlockSchematic bs = new();
         bs.AddAreaWithoutEntities(entity.World, blockAccessor, start, end);
-        bs.PackIncludingAir(entity.World, start);
+        bs.PackIncludingAir(entity.World, start, solidBlockCount);
 
         // clear area in world
         ClearArea(entity.World, start, end);
@@ -70,6 +72,7 @@ public class PackableBehavior : CollectibleBehavior {
         // drop packed item on the ground and remove empty from inventory
         ItemStack packed = new(entity.World.GetItem(_packedBag), slot.StackSize);
         packed.Attributes.SetString("packed-contents", bs.ToJson());
+        packed.Attributes.SetInt("solid-block-count", solidBlockCount);
         if (Config.PutTentInInventoryOnUse) {
             ItemStack sinkStack = slot.Itemstack.Clone();
             slot.Itemstack.StackSize = 0;
@@ -80,19 +83,19 @@ public class PackableBehavior : CollectibleBehavior {
             slot.TakeOutWhole();
         }
 
-        // consume player saturation
-        entity.ReduceOnlySaturation(Config.BuildEffort);
+        // consume player saturation (solid blocks * build effort)
+        entity.ReduceOnlySaturation(Config.BuildEffort * solidBlockCount);
     }
 
-    private void UnpackContents(EntityPlayer entity, BlockSelection blockSel, ItemSlot slot, string contents) {
+    private void UnpackContents(EntityPlayer entity, BlockSelection blockSel, ItemSlot slot, string contents, ref int solidBlockCount) {
         IBlockAccessor blockAccessor = entity.World.BlockAccessor;
 
         int y = IsPlantOrRock(blockAccessor.GetBlock(blockSel.Position)) ? 1 : 0;
 
-        BlockPos start = blockSel.Position.AddCopy(-Config.Radius, 0 - y, -Config.Radius);
-        BlockPos end = blockSel.Position.AddCopy(Config.Radius, Math.Max(Config.Height, 3), Config.Radius);
+        BlockPos start = blockSel.Position.AddCopy(-Config.MaxRadius, 0 - y, -Config.MaxRadius);
+        BlockPos end = blockSel.Position.AddCopy(Config.MaxRadius, Math.Max(Config.MaxHeight, 3), Config.MaxRadius);
 
-        if (!CanUnpack(entity, blockAccessor, start, end)) {
+        if (!CanUnpack(entity, blockAccessor, start, end, ref solidBlockCount)) {
             return;
         }
 
@@ -105,7 +108,7 @@ public class PackableBehavior : CollectibleBehavior {
         }
 
         // paste the schematic into the world (requires bulk block accessor to prevent door/room issues)
-        BlockPos adjustedStart = bs.AdjustStartPos(start.Add(Config.Radius, 1, Config.Radius), EnumOrigin.BottomCenter);
+        BlockPos adjustedStart = bs.AdjustStartPos(start.Add(Config.MaxRadius, 1, Config.MaxRadius), EnumOrigin.BottomCenter);
         bs.ReplaceMode = EnumReplaceMode.ReplaceAll;
         bs.Place(entity.World.BulkBlockAccessor, entity.World, adjustedStart);
         entity.World.BulkBlockAccessor.Commit();
@@ -127,7 +130,7 @@ public class PackableBehavior : CollectibleBehavior {
         }
 
         // consume player saturation
-        entity.ReduceOnlySaturation(Config.BuildEffort);
+        entity.ReduceOnlySaturation(Config.BuildEffort * solidBlockCount);
     }
 
     private static void ClearArea(IWorldAccessor world, BlockPos start, BlockPos end) {
@@ -151,58 +154,118 @@ public class PackableBehavior : CollectibleBehavior {
         blockAccessor.Commit();
     }
 
-    private bool CanPack(EntityPlayer entity, IBlockAccessor blockAccessor, BlockPos start, BlockPos end) {
+    private bool CanPack(EntityPlayer entity, IBlockAccessor blockAccessor, BlockPos start, BlockPos end, ref int solidBlockCount)
+    {
         List<BlockPos> blocks = new();
         bool notified = false;
+        bool canPack = true;
+        int localSolidBlockCount = 0;
 
-        blockAccessor.WalkBlocks(start, end, (block, posX, posY, posZ) => {
+        blockAccessor.WalkBlocks(start, end, (block, posX, posY, posZ) =>
+        {
             BlockPos pos = new(posX, posY, posZ, 0);
-            if (!entity.World.Claims.TryAccess(entity.Player, pos, EnumBlockAccessFlags.BuildOrBreak)) {
+            if (!entity.World.Claims.TryAccess(entity.Player, pos, EnumBlockAccessFlags.BuildOrBreak))
+            {
                 notified = true;
                 blocks.Add(pos);
-            } else if (IsBannedBlock(block.Code)) {
-                if (!notified) {
+            }
+            else if (IsBannedBlock(block.Code))
+            {
+                if (!notified)
+                {
                     SendClientError(entity, Lang.IllegalItemError(block.GetPlacedBlockName(entity.World, pos)));
                     notified = true;
                 }
 
                 blocks.Add(pos);
             }
+
+            if (block.Id != 0)
+            {
+                localSolidBlockCount++;
+            }
+
+            // Check if the player has enough satiety to pack the tent
+            EntityBehaviorHunger? hunger = entity.GetBehavior<EntityBehaviorHunger>();
+            EnumGameMode playerGameMode = entity.Player.WorldData.CurrentGameMode;
+            if (hunger != null && playerGameMode == EnumGameMode.Survival)
+            {
+                float currentHunger = hunger.Saturation;
+
+                if (localSolidBlockCount * Config.BuildEffort > currentHunger)
+                {
+                    if (!notified)
+                    {
+                        SendClientError(entity, Lang.PackHungerError());
+                        notified = true;
+                    }
+                    canPack = false;
+                }
+            }
         });
 
-        return !ShouldHighlightBlocks(entity, blocks);
+        solidBlockCount = localSolidBlockCount;
+        return canPack && !ShouldHighlightBlocks(entity, blocks);
     }
 
-    private bool CanUnpack(EntityPlayer entity, IBlockAccessor blockAccessor, BlockPos start, BlockPos end) {
+    private bool CanUnpack(EntityPlayer entity, IBlockAccessor blockAccessor, BlockPos start, BlockPos end, ref int solidBlockCount) {
         List<BlockPos> blocks = new();
         bool notified = false;
+        bool canUnpack = true;
 
-        blockAccessor.WalkBlocks(start, end, (block, posX, posY, posZ) => {
-            BlockPos pos = new(posX, posY, posZ, 0);
-            if (!entity.World.Claims.TryAccess(entity.Player, pos, EnumBlockAccessFlags.BuildOrBreak)) {
-                notified = true;
-                blocks.Add(pos);
-            } else if (pos.Y == start.Y) {
-                // ReSharper disable once InvertIf
-                if (Config.RequireFloor && !block.SideSolid[BlockFacing.indexUP]) {
-                    if (!notified) {
-                        SendClientError(entity, Lang.SolidGroundError());
+        // Check if the player has enough satiety to pack the tent (do this first to prevent unnecessary block checks)
+        EntityBehaviorHunger? hunger = entity.GetBehavior<EntityBehaviorHunger>();
+        EnumGameMode playerGameMode = entity.Player.WorldData.CurrentGameMode;
+        if (hunger != null && playerGameMode == EnumGameMode.Survival)
+        {
+            float currentHunger = hunger.Saturation;
+
+            if (solidBlockCount * Config.BuildEffort > currentHunger)
+            {
+                if (!notified)
+                {
+                    SendClientError(entity, Lang.UnpackHungerError());
+                    notified = true;
+                }
+                canUnpack = false;
+            }
+        }
+
+        if (canUnpack)
+        {
+            blockAccessor.WalkBlocks(start, end, (block, posX, posY, posZ) => {
+                BlockPos pos = new(posX, posY, posZ, 0);
+                if (!entity.World.Claims.TryAccess(entity.Player, pos, EnumBlockAccessFlags.BuildOrBreak))
+                {
+                    notified = true;
+                    blocks.Add(pos);
+                } else if (pos.Y == start.Y)
+                {
+                    // ReSharper disable once InvertIf
+                    if (Config.RequireFloor && !block.SideSolid[BlockFacing.indexUP])
+                    {
+                        if (!notified)
+                        {
+                            SendClientError(entity, Lang.SolidGroundError());
+                            notified = true;
+                        }
+
+                        blocks.Add(pos);
+                    }
+                } else if (!IsReplaceable(block))
+                {
+                    if (!notified)
+                    {
+                        SendClientError(entity, Lang.ClearAreaError());
                         notified = true;
                     }
 
                     blocks.Add(pos);
                 }
-            } else if (!IsReplaceable(block)) {
-                if (!notified) {
-                    SendClientError(entity, Lang.ClearAreaError());
-                    notified = true;
-                }
+            });
+        }
 
-                blocks.Add(pos);
-            }
-        });
-
-        return !ShouldHighlightBlocks(entity, blocks);
+        return canUnpack && !ShouldHighlightBlocks(entity, blocks);
     }
 
     private static bool IsBannedBlock(AssetLocation? block) {
