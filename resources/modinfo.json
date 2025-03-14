@@ -2,7 +2,7 @@
   "type": "code",
   "name": "TentBag-Reworked",
   "modid": "tentbag-reworked",
-  "version": "3.0.0",
+  "version": "3.0.1",
   "description": "Adds a tent bag for Vintage Story with variable satiety cost",
   "website": "https://github.com/safwyls/TentBag-Reworked",
   "authors": [ "BillyGalbreath", "safwyls" ],

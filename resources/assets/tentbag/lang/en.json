@@ -1,4 +1,4 @@
-﻿{
+{
   "item-tentbag-empty": "Empty Tent Bag",
   "item-tentbag-packed": "Packed Tent Bag",
 
@@ -8,5 +8,9 @@
   "illegal-item-error": "Cannot pack {0} in a bag!",
   "solid-ground-error": "Cannot unpack here, need solid ground!",
   "clear-area-error": "Cannot unpack here, need a clear area!",
+
+  "unpack-hunger-error": "I'm too hungry to unpack this right now!",
+  "pack-hunger-error": "I'm too hungry to pack this right now!",
+
   "unpack-error": "Cannot unpack, internal error reading saved data!"
 }
