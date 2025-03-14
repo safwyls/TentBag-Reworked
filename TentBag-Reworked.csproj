@@ -13,15 +13,16 @@
         <DebugType>full</DebugType>
         <DebugSymbols>true</DebugSymbols>
         <ExcludeGeneratedDebugSymbol>false</ExcludeGeneratedDebugSymbol>
+        <AssemblyVersion>3.0.0</AssemblyVersion>
     </PropertyGroup>
 
     <ItemGroup>
-        <Reference Include="$(VINTAGE_STORY)/**/*.dll" Private="false" />
+        <Reference Include="$(APPDATA)/VintageStory/**/*.dll" Private="false" />
         <None Include="LICENSE;README.md;resources/**" CopyToOutputDirectory="PreserveNewest" Pack="true" PackagePath="" Link="%(RecursiveDir)%(Filename)%(Extension)" />
     </ItemGroup>
 
     <Target Name="Package" AfterTargets="PostBuildEvent">
-        <ZipDirectory DestinationFile="bin/$(TargetName).zip" SourceDirectory="$(TargetDir)" Overwrite="true" />
+        <ZipDirectory DestinationFile="bin/$(AssemblyName)_$(AssemblyVersion).zip" SourceDirectory="$(TargetDir)" Overwrite="true" />
     </Target>
 
 </Project>
