@@ -12,5 +12,7 @@
   "unpack-hunger-error": "I'm too hungry to unpack this right now!",
   "pack-hunger-error": "I'm too hungry to pack this right now!",
 
-  "unpack-error": "Cannot unpack, internal error reading saved data!"
+  "unpack-error": "Cannot unpack, internal error reading saved data!",
+
+  "empty-build-error": "No solid blocks in build area!"
 }

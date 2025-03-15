@@ -7,4 +7,5 @@ public abstract class Lang {
     public static string ClearAreaError(params object[] _) => Vintagestory.API.Config.Lang.Get("tentbag:clear-area-error");
     public static string UnpackHungerError(params object[] _) => Vintagestory.API.Config.Lang.Get("tentbag:unpack-hunger-error");
     public static string PackHungerError(params object[] _) => Vintagestory.API.Config.Lang.Get("tentbag:pack-hunger-error");
+    public static string EmptyBuildError(params object[] _) => Vintagestory.API.Config.Lang.Get("tentbag:empty-build-error");
 }

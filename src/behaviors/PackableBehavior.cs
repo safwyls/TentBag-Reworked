@@ -83,8 +83,13 @@ public class PackableBehavior : CollectibleBehavior {
             slot.TakeOutWhole();
         }
 
-        // consume player saturation (solid blocks * build effort)
-        entity.ReduceOnlySaturation(Config.BuildEffort * solidBlockCount);
+        // Consume player saturation if in survival mode
+        EntityBehaviorHunger? hunger = entity.GetBehavior<EntityBehaviorHunger>();
+        EnumGameMode playerGameMode = entity.Player.WorldData.CurrentGameMode;
+        if (hunger != null && playerGameMode == EnumGameMode.Survival)
+        {
+            entity.ReduceOnlySaturation(Config.BuildEffort * solidBlockCount);
+        }
     }
 
     private void UnpackContents(EntityPlayer entity, BlockSelection blockSel, ItemSlot slot, string contents, ref int solidBlockCount) {
@@ -128,9 +133,14 @@ public class PackableBehavior : CollectibleBehavior {
             entity.World.SpawnItemEntity(empty, blockSel.Position.ToVec3d().Add(0, 1 - y, 0));
             slot.TakeOutWhole();
         }
-
-        // consume player saturation
-        entity.ReduceOnlySaturation(Config.BuildEffort * solidBlockCount);
+                
+        // Consume player saturation if in survival mode
+        EntityBehaviorHunger? hunger = entity.GetBehavior<EntityBehaviorHunger>();
+        EnumGameMode playerGameMode = entity.Player.WorldData.CurrentGameMode;
+        if (hunger != null && playerGameMode == EnumGameMode.Survival)
+        {
+            entity.ReduceOnlySaturation(Config.BuildEffort * solidBlockCount);
+        }
     }
 
     private static void ClearArea(IWorldAccessor world, BlockPos start, BlockPos end) {
@@ -159,7 +169,7 @@ public class PackableBehavior : CollectibleBehavior {
         List<BlockPos> blocks = new();
         bool notified = false;
         bool canPack = true;
-        int localSolidBlockCount = 0;
+        int localSolidBlockCount = 0;        
 
         blockAccessor.WalkBlocks(start, end, (block, posX, posY, posZ) =>
         {
@@ -169,7 +179,7 @@ public class PackableBehavior : CollectibleBehavior {
                 notified = true;
                 blocks.Add(pos);
             }
-            else if (IsBannedBlock(block.Code))
+            else if (IsBannedBlock(block))
             {
                 if (!notified)
                 {
@@ -185,7 +195,7 @@ public class PackableBehavior : CollectibleBehavior {
                 localSolidBlockCount++;
             }
 
-            // Check if the player has enough satiety to pack the tent
+            // Check if the player has enough saturation to pack the tent
             EntityBehaviorHunger? hunger = entity.GetBehavior<EntityBehaviorHunger>();
             EnumGameMode playerGameMode = entity.Player.WorldData.CurrentGameMode;
             if (hunger != null && playerGameMode == EnumGameMode.Survival)
@@ -204,6 +214,17 @@ public class PackableBehavior : CollectibleBehavior {
             }
         });
 
+        // If build area is only air blocks, don't pack it
+        if (localSolidBlockCount == 0)
+        {
+            if (!notified)
+            {
+                SendClientError(entity, Lang.EmptyBuildError());
+                notified = true;
+            }
+            canPack = false;
+        }
+
         solidBlockCount = localSolidBlockCount;
         return canPack && !ShouldHighlightBlocks(entity, blocks);
     }
@@ -213,7 +234,7 @@ public class PackableBehavior : CollectibleBehavior {
         bool notified = false;
         bool canUnpack = true;
 
-        // Check if the player has enough satiety to pack the tent (do this first to prevent unnecessary block checks)
+        // Check if the player has enough saturation to unpack the tent (do this first to prevent unnecessary block checks)
         EntityBehaviorHunger? hunger = entity.GetBehavior<EntityBehaviorHunger>();
         EnumGameMode playerGameMode = entity.Player.WorldData.CurrentGameMode;
         if (hunger != null && playerGameMode == EnumGameMode.Survival)
@@ -268,23 +289,56 @@ public class PackableBehavior : CollectibleBehavior {
         return canUnpack && !ShouldHighlightBlocks(entity, blocks);
     }
 
-    private static bool IsBannedBlock(AssetLocation? block) {
-        if (block == null) {
+    private static bool IsBannedBlock(Block block) {
+        AssetLocation? blockCode = block.Code;
+
+        if (blockCode == null) {
             return false;
         }
 
-        foreach (string banned in Config.BannedBlocks) {
-            AssetLocation code = new(banned);
-            if (code.Equals(block)) {
-                return true;
+        if (Config.AllowListMode)
+        {
+            // Always allow air blocks
+            if (block.BlockId == 0) return false;
+
+            // Grass and Rocks check
+            if (IsPlantOrRock(block)) return false;
+
+            foreach (string allowed in Config.AllowedBlocks)
+            {
+                AssetLocation code = new(allowed);
+                if (code.Equals(blockCode))
+                {
+                    return false;
+                }
+
+                if (code.IsWildCard && WildcardUtil.GetWildcardValue(code, blockCode) != null)
+                {
+                    return false;
+                }
             }
 
-            if (code.IsWildCard && WildcardUtil.GetWildcardValue(code, block) != null) {
-                return true;
+            return true;
+        }
+        else
+        {
+            foreach (string banned in Config.BannedBlocks)
+            {
+                AssetLocation code = new(banned);
+                if (code.Equals(blockCode))
+                {
+                    return true;
+                }
+
+                if (code.IsWildCard && WildcardUtil.GetWildcardValue(code, blockCode) != null)
+                {
+                    return true;
+                }
             }
+
+            return false;
         }
 
-        return false;
     }
 
     private bool ShouldHighlightBlocks(EntityPlayer entity, List<BlockPos> blocks) {

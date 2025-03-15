@@ -17,6 +17,8 @@ public class Config {
     public bool PutTentInInventoryOnUse { get; set; } = true;
     public string HighlightErrorColor { get; set; } = "#2FFF0000";
 
+    public bool AllowListMode { get; set; } = false;
+
     public string[] BannedBlocks { get; set; } = {
         "game:log-grown-*",
         "game:log-resin-*",
@@ -40,5 +42,9 @@ public class Config {
         "game:claypot-cooked",
         "game:anvil-*",
         "game:forge"
+    };
+
+    public string[] AllowedBlocks { get; set; } = {
+        "game:soil-*"
     };
 }
