@@ -1,6 +1,7 @@
 using tentbag.configuration;
 using tentbag.util;
 using Vintagestory.API.Common;
+using Vintagestory.API.Common.Entities;
 using Vintagestory.API.MathTools;
 using Vintagestory.API.Server;
 using Vintagestory.API.Util;
@@ -16,6 +17,7 @@ public class PackableBehavior : CollectibleBehavior {
     private static bool IsReplaceable(Block? block) => IsAirOrNull(block) || IsPlantOrRock(block);
 
     private static void SendClientError(EntityPlayer entity, string error) => TentBag.Instance.SendClientError(entity.Player, error);
+    private static void SendClientChatMessage(EntityPlayer entity, string message) => TentBag.Instance.SendClientChatMessage(entity.Player, message);
 
     private readonly AssetLocation? _emptyBag;
     private readonly AssetLocation? _packedBag;
@@ -53,8 +55,9 @@ public class PackableBehavior : CollectibleBehavior {
         IBlockAccessor blockAccessor = entity.World.BlockAccessor;
 
         int y = IsPlantOrRock(blockAccessor.GetBlock(blockSel.Position)) ? 1 : 0;
+        int floorShift = Config.GrabFloor ? -1 : 0;
 
-        BlockPos start = blockSel.Position.AddCopy(-Config.MaxRadius, 1 - y, -Config.MaxRadius);
+        BlockPos start = blockSel.Position.AddCopy(-Config.MaxRadius, 1 - y + floorShift, -Config.MaxRadius);
         BlockPos end = blockSel.Position.AddCopy(Config.MaxRadius, Math.Max(Config.MaxHeight, 3), Config.MaxRadius);
 
         if (!CanPack(entity, blockAccessor, start, end, ref solidBlockCount)) {
@@ -66,8 +69,9 @@ public class PackableBehavior : CollectibleBehavior {
         bs.AddAreaWithoutEntities(entity.World, blockAccessor, start, end);
         bs.PackIncludingAir(entity.World, start, solidBlockCount);
 
+        
         // clear area in world
-        ClearArea(entity.World, start, end);
+        if (!Config.CopyMode) ClearArea(entity.World, start, end);
 
         // drop packed item on the ground and remove empty from inventory
         ItemStack packed = new(entity.World.GetItem(_packedBag), slot.StackSize);
@@ -90,10 +94,15 @@ public class PackableBehavior : CollectibleBehavior {
         {
             entity.ReduceOnlySaturation(Config.BuildEffort * solidBlockCount);
         }
+
+        ChatNotification(entity, $"Packed {solidBlockCount} blocks, consumed {solidBlockCount * Config.BuildEffort} saturation.");
     }
 
     private void UnpackContents(EntityPlayer entity, BlockSelection blockSel, ItemSlot slot, string contents, ref int solidBlockCount) {
         IBlockAccessor blockAccessor = entity.World.BlockAccessor;
+
+        //Customized BulkBlockAccessor with relight on commit
+        IBulkBlockAccessor bulkBlockAccessor = entity.World.GetBlockAccessorBulkUpdate(true, true, false);
 
         int y = IsPlantOrRock(blockAccessor.GetBlock(blockSel.Position)) ? 1 : 0;
 
@@ -115,13 +124,13 @@ public class PackableBehavior : CollectibleBehavior {
         // paste the schematic into the world (requires bulk block accessor to prevent door/room issues)
         BlockPos adjustedStart = bs.AdjustStartPos(start.Add(Config.MaxRadius, 1, Config.MaxRadius), EnumOrigin.BottomCenter);
         bs.ReplaceMode = EnumReplaceMode.ReplaceAll;
-        bs.Place(entity.World.BulkBlockAccessor, entity.World, adjustedStart);
-        entity.World.BulkBlockAccessor.Commit();
+                
+        bs.Place(bulkBlockAccessor, entity.World, adjustedStart);
+        bulkBlockAccessor.Commit();
+
+        // Do this after bulk accessor commit
         bs.PlaceEntitiesAndBlockEntities(blockAccessor, entity.World, adjustedStart, bs.BlockCodes, bs.ItemCodes);
-
-        // manually relight the chunks since the bulk accessor doesn't do it
-        (entity.World.Api as ICoreServerAPI)?.WorldManager.FullRelight(start, end);
-
+                
         // drop empty item on the ground and remove empty from inventory
         ItemStack empty = new(entity.World.GetItem(_emptyBag), slot.StackSize);
         if (Config.PutTentInInventoryOnUse) {
@@ -133,6 +142,8 @@ public class PackableBehavior : CollectibleBehavior {
             entity.World.SpawnItemEntity(empty, blockSel.Position.ToVec3d().Add(0, 1 - y, 0));
             slot.TakeOutWhole();
         }
+
+        if (Config.DropWaypoint) CreateWaypoint(entity);
                 
         // Consume player saturation if in survival mode
         EntityBehaviorHunger? hunger = entity.GetBehavior<EntityBehaviorHunger>();
@@ -141,6 +152,38 @@ public class PackableBehavior : CollectibleBehavior {
         {
             entity.ReduceOnlySaturation(Config.BuildEffort * solidBlockCount);
         }
+
+        ChatNotification(entity, $"Unpacked {solidBlockCount} blocks, consumed {solidBlockCount * Config.BuildEffort} saturation.");
+    }
+
+    private static void ChatNotification(EntityPlayer entity, string message)
+    {
+        if (Config.ShowChatNotification)
+        {
+            SendClientChatMessage(entity, message);
+        }
+    }
+
+    private static void CreateWaypoint(EntityPlayer player)
+    {
+        string format = "/waypoint addati {0} ={1} ={2} ={3} {4} {5} Death: {6}";
+        string icon = Config.WaypointIcon;
+        BlockPos pos = player.ServerPos.AsBlockPos;
+        bool isPinned = Config.PinWaypoint;
+        string color = Config.WaypointColor;
+        string buildTime = DateTime.Now.ToString("yyyy-MM-dd HH:mm:ss");
+
+        string message = string.Format(format, icon, pos.X, pos.Y, pos.Z, isPinned, color, buildTime);
+
+        player.Api.ChatCommands.ExecuteUnparsed(message, new TextCommandCallingArgs
+        {
+            Caller = new Caller
+            {
+                Player = player.Player,
+                Pos = player.Pos.XYZ,
+                FromChatGroupId = Vintagestory.API.Config.GlobalConstants.CurrentChatGroup
+            }
+        });
     }
 
     private static void ClearArea(IWorldAccessor world, BlockPos start, BlockPos end) {
@@ -263,7 +306,7 @@ public class PackableBehavior : CollectibleBehavior {
                 } else if (pos.Y == start.Y)
                 {
                     // ReSharper disable once InvertIf
-                    if (Config.RequireFloor && !block.SideSolid[BlockFacing.indexUP])
+                    if (Config.RequireSolidGround && !block.SideSolid[BlockFacing.indexUP])
                     {
                         if (!notified)
                         {

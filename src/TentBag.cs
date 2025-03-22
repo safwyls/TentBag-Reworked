@@ -1,4 +1,4 @@
-﻿using Newtonsoft.Json;
+using Newtonsoft.Json;
 using Newtonsoft.Json.Serialization;
 using ProtoBuf;
 using tentbag.behaviors;
@@ -16,6 +16,7 @@ public class TentBag : ModSystem {
     public static TentBag Instance { get; private set; } = null!;
 
     public ICoreAPI Api { get; private set; } = null!;
+    public ICoreClientAPI clientApi { get; private set; } = null!;
 
     public ILogger Logger => Mod.Logger;
     public string ModId => Mod.Info.ModID;
@@ -39,7 +40,8 @@ public class TentBag : ModSystem {
     }
 
     public override void StartClientSide(ICoreClientAPI capi) {
-        capi.Network.RegisterChannel(Mod.Info.ModID)
+        clientApi = capi;
+        clientApi.Network.RegisterChannel(Mod.Info.ModID)
             .RegisterMessageType<ErrorPacket>()
             .SetMessageHandler<ErrorPacket>(packet => {
                 if (!string.IsNullOrEmpty(packet.Error)) {
@@ -58,6 +60,14 @@ public class TentBag : ModSystem {
     public void SendClientError(IPlayer? player, string error) {
         if (player is IServerPlayer serverPlayer) {
             _channel?.SendPacket(new ErrorPacket { Error = error }, serverPlayer);
+        }
+    }
+
+    public void SendClientChatMessage(IPlayer? player, string message)
+    {
+        if (player is IServerPlayer serverPlayer)
+        {
+            serverPlayer.SendMessage(GlobalConstants.GeneralChatGroup, message, EnumChatType.Notification);
         }
     }
 

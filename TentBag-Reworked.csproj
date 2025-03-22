@@ -13,7 +13,7 @@
         <DebugType>full</DebugType>
         <DebugSymbols>true</DebugSymbols>
         <ExcludeGeneratedDebugSymbol>false</ExcludeGeneratedDebugSymbol>
-        <AssemblyVersion>3.0.2</AssemblyVersion>
+        <AssemblyVersion>3.0.4</AssemblyVersion>
     </PropertyGroup>
 
     <ItemGroup>
